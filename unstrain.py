@@ -12,11 +12,31 @@ level = "Default"
 maxcore = 4000
 
 method_dict = {"Default": ("! PBE0 def2-SVP RIJCOSX def2/J PAL4 TIGHTSCF TightOpt Freq D3BJ",
-                           "! wB97X-D3 def2-TZVPP RIJCOSX def2/J PAL4 TIGHTSCF D3BJ GridX6"),
+                           "! wB97X-D3 def2-TZVPP RIJCOSX def2/J PAL4 TIGHTSCF GridX6"),
                "High-level": ("! RI-MP2 def2-TZVP RIJCOSX def2/J def2-TZVP/C PAL8 TIGHTSCF TightOpt NumFreq",
                               "! DLPNO-CCSD(T) def2-QZVPP RIJCOSX def2/J PAL8 TIGHTSCF GridX6"),
                "Cheap": ("! PBE def2-SVP RIJCOSX def2/J PAL4 Opt Freq D3BJ",
                          "None")}
+
+probe_dict = {"acyl": ("O=[C]", "O=C"),
+              "acetaldehyde": ("O=C[C]", "O=CC"),
+              "acetonitrile": ("[C]C#N", "CC#N"),
+              "ethanol": ("[C]CO", "CCO"),
+              "Br": ("[Br]", "Br"),
+              "Cl": ("[Cl]", "Cl"),
+              "F": ("[F]", "F"),
+              "I": ("[I]", "I"),
+              "OH": ("[OH]", "O"),
+              "SH": ("[SH]", "S"),
+              "SeH": ("[SeH]", "[SeH2]"),
+              "TeH": ("[TeH]", "[TeH2]"),
+              "NH2": ("[NH2]", "N"),
+              "PH2": ("[PH2]", "P"),
+              "AsH2": ("[AsH2]", "[AsH3]"),
+              "CH3": ("[CH3]", "C"),
+              "SiH3": ("[SiH3]", "[SiH4]"),
+              "GaH3": ("[GaH3]", "[GaH4]"),
+              "SnH3": ("[SnH3]", "[SnH4]")}
 
 
 def make_mol_obj(smiles_string):
@@ -158,7 +178,7 @@ def get_orca_opt_xyzs_energy(out_lines):
     """
 
     opt_converged, geom_section = False, False
-    opt_xyzs, energy = [], 0.0
+    opt_xyzs, energy, gibbs_corr = [], 0.0, 0.0
 
     for line in out_lines:
 
@@ -177,7 +197,18 @@ def get_orca_opt_xyzs_energy(out_lines):
         if 'FINAL SINGLE POINT ENERGY' in line:
             energy = float(line.split()[4])             # e.g. line = 'FINAL SINGLE POINT ENERGY     -4143.815610365798'
 
-    return opt_xyzs, energy
+        if 'G-E(el)' in line:
+            gibbs_corr = float(line.split()[2])
+
+    return opt_xyzs, energy, gibbs_corr
+
+
+def get_orca_sp_energy(out_lines):
+
+    for line in out_lines[::-1]:
+
+        if 'FINAL SINGLE POINT ENERGY' in line:
+            return float(line.split()[4])             # e.g. line = 'FINAL SINGLE POINT ENERGY     -4143.815610365798'
 
 
 class Molecule(object):
@@ -185,7 +216,15 @@ class Molecule(object):
     def optimise(self):
         inp_filename = gen_orca_inp(mol=self, name=self.name + "_opt", opt=True)
         orca_output_lines = run_orca(inp_filename, out_filename=inp_filename.replace(".inp", ".out"))
-        self.xyzs, self.energy = get_orca_opt_xyzs_energy(out_lines=orca_output_lines)
+        self.xyzs, self.energy, self.gibbs_corr = get_orca_opt_xyzs_energy(out_lines=orca_output_lines)
+
+    def single_point(self):
+        inp_filename = gen_orca_inp(mol=self, name=self.name + "_sp", sp=True)
+        orca_output_lines = run_orca(inp_filename, out_filename=inp_filename.replace(".inp", ".out"))
+        self.energy = get_orca_sp_energy(out_lines=orca_output_lines)
+
+    def set_gibbs(self):
+        self.gibbs = self.energy + self.gibbs_corr
 
     def __init__(self, smiles, charge=0, mult=1, name="strained"):
 
@@ -194,8 +233,21 @@ class Molecule(object):
         self.mult = mult
         self.name = name
         self.energy = None
+        self.gibbs_corr = None
+        self.gibbs = None
         self.obj = make_mol_obj(smiles)
         self.xyzs = gen_conformer_xyzs(mol_obj=self.obj, conf_ids=[0])[0]
+
+
+def calc_dG_addition(strained, probe, adduct):
+    return adduct.gibbs - (strained.gibbs + probe.gibbs)
+
+
+def calc_dG_isodesmic(probeH, adduct, probe, adductH):
+    return (probe.gibbs + adductH.gibbs) - (probeH.gibbs + adduct.gibbs)
+
+
+
 
 
 if __name__ == "__main__":
@@ -211,6 +263,13 @@ if __name__ == "__main__":
     product = Molecule(smiles=add_H_to_adduct(adduct_smiles=adduct.smiles))
 
     ethene.optimise()
+    print(ethene.energy)
+    ethene.single_point()
+    print(ethene.energy)
+    ethene.gibbs_corr
+    print(ethene.gibbs_corr)
+    ethene.gibbs
+    print(ethene.gibbs)
 
 
 
