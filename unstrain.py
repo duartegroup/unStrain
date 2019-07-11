@@ -3,40 +3,43 @@ from rdkit.Chem import AllChem
 import re
 import os
 from subprocess import Popen
+import matplotlib.pyplot as plt
 
 
 path_to_orca = "/usr/local/orca_4_1_1_linux_x86-64/orca"
 
-level = "Default"
+level = "Cheap"
 
 maxcore = 4000
+
+conversion_factor = 627.5 # (kcal/mol)/Ha^-1
 
 method_dict = {"Default": ("! PBE0 def2-SVP RIJCOSX def2/J PAL4 TIGHTSCF TightOpt Freq D3BJ",
                            "! wB97X-D3 def2-TZVPP RIJCOSX def2/J PAL4 TIGHTSCF GridX6"),
                "High-level": ("! RI-MP2 def2-TZVP RIJCOSX def2/J def2-TZVP/C PAL8 TIGHTSCF TightOpt NumFreq",
                               "! DLPNO-CCSD(T) def2-QZVPP RIJCOSX def2/J PAL8 TIGHTSCF GridX6"),
                "Cheap": ("! PBE def2-SVP RIJCOSX def2/J PAL4 Opt Freq D3BJ",
-                         "None")}
+                         None)}
 
-probe_dict = {"acyl": ("O=[C]", "O=C"),
-              "acetaldehyde": ("O=C[C]", "O=CC"),
-              "acetonitrile": ("[C]C#N", "CC#N"),
-              "ethanol": ("[C]CO", "CCO"),
-              "Br": ("[Br]", "Br"),
-              "Cl": ("[Cl]", "Cl"),
-              "F": ("[F]", "F"),
-              "I": ("[I]", "I"),
-              "OH": ("[OH]", "O"),
-              "SH": ("[SH]", "S"),
-              "SeH": ("[SeH]", "[SeH2]"),
-              "TeH": ("[TeH]", "[TeH2]"),
-              "NH2": ("[NH2]", "N"),
-              "PH2": ("[PH2]", "P"),
-              "AsH2": ("[AsH2]", "[AsH3]"),
-              "CH3": ("[CH3]", "C"),
-              "SiH3": ("[SiH3]", "[SiH4]"),
-              "GaH3": ("[GaH3]", "[GaH4]"),
-              "SnH3": ("[SnH3]", "[SnH4]")}
+probe_dict = {"acyl": ("O=[C][H]", "O=C", ".O=[C]%99[H]"),
+              "acetaldehyde": ("O=C[C]", "O=CC", ".O=CC%99"),
+              "acetonitrile": ("[C]C#N", "CC#N", ".C%99C#N"),
+              "ethanol": ("[C]CO", "CCO", ".C%99CO"),
+              "Br": ("[Br]", "Br", ".[Br%99]"),
+              "Cl": ("[Cl]", "Cl", ".[Cl%99]"),
+              "F": ("[F]", "F", ".[F%99]"),
+              "I": ("[I]", "I", ".[I%99]"),
+              "OH": ("[O][H]", "[H]O[H]", ".O%99[H]"),
+              "SH": ("[S][H]", "[H]S[H]", ".S%99[H]"),
+              "SeH": ("[Se][H]", "[H][Se][H]", ".[Se%99][H]"),
+              "TeH": ("[Te][H]", "[H][Te][H]", ".[Te%99][H]"),
+              "NH2": ("[N]([H])[H]", "[H]N([H])[H]", ".[N%99]([H]])[H]"),
+              "PH2": ("[P]([H])[H]", "[H]P([H])[H]", ".[P%99]([H])[H]"),
+              "AsH2": ("[As]([H])[H]", "[H][As]([H])[H]", ".[As%99]([H])[H]"),
+              "CH3": ("[H][C]([H])[H]", "C", ".C%99"),
+              "SiH3": ("[H][Si]([H])[H]", "[H][Si]([[H])([H])[H]", ".[H][Si%99]([[H])[H]"),
+              "GaH3": ("[[H][Ga]([H])[H]", "[H][Ga]([[H])([H])[H]", ".[H][Ga%99]([[H])[H]"),
+              "SnH3": ("[H][Sn]([H])[H]", "[H][Sn]([[H])([H])[H]", ".[H][Sn%99]([[H])[H]")}
 
 
 def make_mol_obj(smiles_string):
@@ -213,15 +216,21 @@ def get_orca_sp_energy(out_lines):
 
 class Molecule(object):
 
+    def calc_gibbs(self):
+        self.optimise()
+        self.single_point()
+        self.set_gibbs()
+
     def optimise(self):
         inp_filename = gen_orca_inp(mol=self, name=self.name + "_opt", opt=True)
         orca_output_lines = run_orca(inp_filename, out_filename=inp_filename.replace(".inp", ".out"))
         self.xyzs, self.energy, self.gibbs_corr = get_orca_opt_xyzs_energy(out_lines=orca_output_lines)
 
     def single_point(self):
-        inp_filename = gen_orca_inp(mol=self, name=self.name + "_sp", sp=True)
-        orca_output_lines = run_orca(inp_filename, out_filename=inp_filename.replace(".inp", ".out"))
-        self.energy = get_orca_sp_energy(out_lines=orca_output_lines)
+        if method_dict[level][1] is not None:
+            inp_filename = gen_orca_inp(mol=self, name=self.name + "_sp", sp=True)
+            orca_output_lines = run_orca(inp_filename, out_filename=inp_filename.replace(".inp", ".out"))
+            self.energy = get_orca_sp_energy(out_lines=orca_output_lines)
 
     def set_gibbs(self):
         self.gibbs = self.energy + self.gibbs_corr
@@ -238,38 +247,53 @@ class Molecule(object):
         self.obj = make_mol_obj(smiles)
         self.xyzs = gen_conformer_xyzs(mol_obj=self.obj, conf_ids=[0])[0]
 
+        self.calc_gibbs()
+
 
 def calc_dG_addition(strained, probe, adduct):
-    return adduct.gibbs - (strained.gibbs + probe.gibbs)
+    return (adduct.gibbs - (strained.gibbs + probe.gibbs))*conversion_factor
 
 
 def calc_dG_isodesmic(probeH, adduct, probe, adductH):
-    return (probe.gibbs + adductH.gibbs) - (probeH.gibbs + adduct.gibbs)
+    return ((probe.gibbs + adductH.gibbs) - (probeH.gibbs + adduct.gibbs))*conversion_factor
 
 
+def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
+    mult = 1
+    if charge_on_probe == 0:
+        mult = 2
+    strained = Molecule(smiles=strained_smiles)
+    general_adduct_smiles = modify_adduct_smiles(smiles_string=general_adduct_smiles)
 
+    xs, ys = [], []
+
+    for probe_name in probe_dict.keys():
+        probe = Molecule(smiles=probe_dict[probe_name][0], name=probe_name + str(charge_on_probe),
+                         charge=charge_on_probe, mult=mult)
+        probeH = Molecule(smiles=probe_dict[probe_name][1], name=probe_name + "H")
+        adduct = Molecule(smiles=general_adduct_smiles + probe_dict[probe_name][2],
+                          name=strained.name + "_" + probe.name, charge=charge_on_probe, mult=mult)
+        adductH = Molecule(smiles=add_H_to_adduct(adduct_smiles=adduct.smiles),
+                           name=strained.name + "_" + probe.name + "H")
+        dG_addition = calc_dG_addition(strained, probe, adduct)
+        dG_isodesmic = calc_dG_isodesmic(probeH, adduct, probe, adductH)
+        xs.append(dG_addition)
+        ys.append(dG_isodesmic)
+
+    plt.scatter(xs, ys)
+    plt.xlabel("dG_addition")
+    plt.ylabel("dG_isodesmic")
+    return plt.savefig("strain_graph.png")
 
 
 if __name__ == "__main__":
     ethene_smiles = "C=C"
-    methyl_smiles = "[H][C]([H])[H]"
     adduct_smiles = "[H][C]([H])C[*]"
-    adduct_smiles = modify_adduct_smiles(smiles_string=adduct_smiles)
-    methyl_addition_smiles = ".C%99"
+    charge_on_probe = 1
 
-    ethene = Molecule(smiles=ethene_smiles)
-    methyl = Molecule(smiles=methyl_smiles)
-    adduct = Molecule(smiles=adduct_smiles + methyl_addition_smiles)
-    product = Molecule(smiles=add_H_to_adduct(adduct_smiles=adduct.smiles))
+    plot_strain_graph(strained_smiles=ethene_smiles, general_adduct_smiles=adduct_smiles, charge_on_probe=charge_on_probe)
 
-    ethene.optimise()
-    print(ethene.energy)
-    ethene.single_point()
-    print(ethene.energy)
-    ethene.gibbs_corr
-    print(ethene.gibbs_corr)
-    ethene.gibbs
-    print(ethene.gibbs)
+
 
 
 
