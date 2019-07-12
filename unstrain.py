@@ -21,11 +21,7 @@ method_dict = {"Default": ("! PBE0 def2-SVP RIJCOSX def2/J PAL4 TIGHTSCF TightOp
                "Cheap": ("! PBE def2-SVP RIJCOSX def2/J PAL4 Opt Freq D3BJ",
                          None)}
 
-probe_dict = {"acyl": ("O=[C][H]", "O=C", ".O=[C]%99[H]"),
-              "acetaldehyde": ("O=C[C]", "O=CC", ".O=CC%99"),
-              "acetonitrile": ("[C]C#N", "CC#N", ".C%99C#N"),
-              "ethanol": ("[C]CO", "CCO", ".C%99CO"),
-              "Br": ("[Br]", "Br", ".[Br%99]"),
+probe_dict = {"Br": ("[Br]", "Br", ".[Br%99]"),
               "Cl": ("[Cl]", "Cl", ".[Cl%99]"),
               "F": ("[F]", "F", ".[F%99]"),
               "I": ("[I]", "I", ".[I%99]"),
@@ -37,9 +33,9 @@ probe_dict = {"acyl": ("O=[C][H]", "O=C", ".O=[C]%99[H]"),
               "PH2": ("[P]([H])[H]", "[H]P([H])[H]", ".[P%99]([H])[H]"),
               "AsH2": ("[As]([H])[H]", "[H][As]([H])[H]", ".[As%99]([H])[H]"),
               "CH3": ("[H][C]([H])[H]", "C", ".C%99"),
-              "SiH3": ("[H][Si]([H])[H]", "[H][Si]([[H])([H])[H]", ".[H][Si%99]([[H])[H]"),
-              "GaH3": ("[[H][Ga]([H])[H]", "[H][Ga]([[H])([H])[H]", ".[H][Ga%99]([[H])[H]"),
-              "SnH3": ("[H][Sn]([H])[H]", "[H][Sn]([[H])([H])[H]", ".[H][Sn%99]([[H])[H]")}
+              "SiH3": ("[H][Si]([H])[H]", "[H][Si]([H])([H])[H]", ".[H][Si%99]([H])[H]"),
+              "GaH3": ("[H][Ga]([H])[H]", "[H][Ga]([H])([H])[H]", ".[H][Ga%99]([H])[H]"),
+              "SnH3": ("[H][Sn]([H])[H]", "[H][Sn]([H])([H])[H]", ".[H][Sn%99]([H])[H]")}
 
 
 def make_mol_obj(smiles_string):
@@ -138,6 +134,12 @@ def gen_orca_inp(mol, name, opt=False, sp=False):
     inp_filename = name + ".inp"
     with open(inp_filename, "w") as inp_file:
         if opt:
+            keyword_line = method_dict[level][0]
+            if len(mol.xyzs) == 1:
+                if "TightOpt" in keyword_line:
+                    keyword_line.replace("TightOpt", "")
+                if "Opt" in keyword_line:
+                    keyword_line.replace("Opt", "")
             print(method_dict[level][0], file=inp_file)
         if sp:
             print(method_dict[level][1], file=inp_file)
@@ -204,6 +206,26 @@ def get_orca_opt_xyzs_energy(out_lines):
             gibbs_corr = float(line.split()[2])
 
     return opt_xyzs, energy, gibbs_corr
+
+
+def get_orca_opt_xyzs_energy_single_atom(out_lines):
+
+    if len(mol.xyzs) == 1:
+
+        for line in out_lines:
+
+            if 'Translational entropy' in line:
+                S_trans = float(line.split()[3])
+
+            if 'Total enthalpy' in line:
+                H_total = float(line.split()[3])
+
+            if 'FINAL SINGLE POINT ENERGY' in line:
+                energy = float(line.split()[4])'
+
+            gibbs_corr = (S_trans + H_total) - energy
+
+        return gibbs_corr, energy
 
 
 def get_orca_sp_energy(out_lines):
