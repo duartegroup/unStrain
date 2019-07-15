@@ -21,10 +21,10 @@ method_dict = {"Default": ("! PBE0 def2-SVP RIJCOSX def2/J PAL4 TIGHTSCF TightOp
                "Cheap": ("! PBE def2-SVP RIJCOSX def2/J PAL4 Opt Freq D3BJ",
                          None)}
 
-probe_dict = {"Br": ("[Br]", "Br", ".[Br%99]"),
-              "Cl": ("[Cl]", "Cl", ".[Cl%99]"),
-              "F": ("[F]", "F", ".[F%99]"),
-              "I": ("[I]", "I", ".[I%99]"),
+probe_dict = {"Br": ("[Br]", "Br", ".[Br]%99"),
+              "Cl": ("[Cl]", "Cl", ".[Cl]%99"),
+              "F": ("[F]", "F", ".[F]%99"),
+              "I": ("[I]", "I", ".[I]%99"),
               "OH": ("[O][H]", "[H]O[H]", ".O%99[H]"),
               "SH": ("[S][H]", "[H]S[H]", ".S%99[H]"),
               "SeH": ("[Se][H]", "[H][Se][H]", ".[Se%99][H]"),
@@ -137,10 +137,10 @@ def gen_orca_inp(mol, name, opt=False, sp=False):
             keyword_line = method_dict[level][0]
             if len(mol.xyzs) == 1:
                 if "TightOpt" in keyword_line:
-                    keyword_line.replace("TightOpt", "")
+                    keyword_line = keyword_line.replace("TightOpt", "")
                 if "Opt" in keyword_line:
-                    keyword_line.replace("Opt", "")
-            print(method_dict[level][0], file=inp_file)
+                    keyword_line = keyword_line.replace("Opt", "")
+            print(keyword_line, file=inp_file)
         if sp:
             print(method_dict[level][1], file=inp_file)
         print("%maxcore", maxcore, file=inp_file)
@@ -208,24 +208,24 @@ def get_orca_opt_xyzs_energy(out_lines):
     return opt_xyzs, energy, gibbs_corr
 
 
-def get_orca_opt_xyzs_energy_single_atom(out_lines):
+def get_orca_gibbs_corr_energy_single_atom(out_lines):
 
-    if len(mol.xyzs) == 1:
+    S_trans, H_total, energy = 0.0, 0.0, 0.0
 
-        for line in out_lines:
+    for line in out_lines:
 
-            if 'Translational entropy' in line:
-                S_trans = float(line.split()[3])
+        if 'Translational entropy' in line:
+            S_trans = float(line.split()[3])
 
-            if 'Total enthalpy' in line:
-                H_total = float(line.split()[3])
+        if 'Total enthalpy' in line:
+            H_total = float(line.split()[3])
 
-            if 'FINAL SINGLE POINT ENERGY' in line:
-                energy = float(line.split()[4])'
+        if 'FINAL SINGLE POINT ENERGY' in line:
+            energy = float(line.split()[4])
 
-            gibbs_corr = (S_trans + H_total) - energy
+    gibbs_corr = (S_trans + H_total) - energy
 
-        return gibbs_corr, energy
+    return energy, gibbs_corr
 
 
 def get_orca_sp_energy(out_lines):
@@ -246,7 +246,10 @@ class Molecule(object):
     def optimise(self):
         inp_filename = gen_orca_inp(mol=self, name=self.name + "_opt", opt=True)
         orca_output_lines = run_orca(inp_filename, out_filename=inp_filename.replace(".inp", ".out"))
-        self.xyzs, self.energy, self.gibbs_corr = get_orca_opt_xyzs_energy(out_lines=orca_output_lines)
+        if len(self.xyzs) == 1:
+            self.energy, self.gibbs_corr = get_orca_gibbs_corr_energy_single_atom(out_lines=orca_output_lines)
+        else:
+            self.xyzs, self.energy, self.gibbs_corr = get_orca_opt_xyzs_energy(out_lines=orca_output_lines)
 
     def single_point(self):
         if method_dict[level][1] is not None:
