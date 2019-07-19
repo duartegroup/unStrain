@@ -6,13 +6,14 @@ from subprocess import Popen
 import matplotlib.pyplot as plt
 
 
-path_to_orca = "/usr/local/orca_4_1_1_linux_x86-64/orca"
+# path_to_orca = "/usr/local/orca_4_1_1_linux_x86-64/orca"
+path_to_orca = "/usr/local/orca_4_1_1/orca"
 
 level = "Cheap"
 
 maxcore = 4000
 
-conversion_factor = 627.5 # (kcal/mol)/Ha^-1
+conversion_factor = 627.5  # (kcal/mol)/Ha^-1
 
 method_dict = {"Default": ("! PBE0 def2-SVP RIJCOSX def2/J PAL4 TIGHTSCF TightOpt Freq D3BJ",
                            "! wB97X-D3 def2-TZVPP RIJCOSX def2/J PAL4 TIGHTSCF GridX6"),
@@ -21,7 +22,8 @@ method_dict = {"Default": ("! PBE0 def2-SVP RIJCOSX def2/J PAL4 TIGHTSCF TightOp
                "Cheap": ("! PBE def2-SVP RIJCOSX def2/J PAL4 Opt Freq D3BJ",
                          None)}
 
-probe_dict = {"Br": ("[Br]", "Br", ".[Br]%99"),
+probe_dict = {"SeH": ("[Se][H]", "[H][Se][H]", ".[Se]%99[H]"),
+              "Br": ("[Br]", "Br", ".[Br]%99"),
               "Cl": ("[Cl]", "Cl", ".[Cl]%99"),
               "F": ("[F]", "F", ".[F]%99"),
               "I": ("[I]", "I", ".[I]%99"),
@@ -37,9 +39,8 @@ probe_dict = {"Br": ("[Br]", "Br", ".[Br]%99"),
               "GaH3": ("[H][Ga]([H])[H]", "[H][Ga]([H])([H])[H]", ".[H][Ga]%99([H])[H]"),
               "SnH3": ("[H][Sn]([H])[H]", "[H][Sn]([H])([H])[H]", ".[H][Sn]%99][H])[H]")}
 
-atoms_that_confuse_rdkit = {["Se", "Te"]: "O",
-                            ["As"]: "N",
-                            ["Ga", "Sn"]: "C"}
+light_atoms = ['H', 'B', 'C', 'N', 'O', 'F', 'Al', 'Si', 'P', 'S', 'Cl']
+heavy_atoms_and_analogues = {'Te': 'S', 'As': 'P', 'Ga': 'Al', 'Sn': 'Si', 'Se': 'S'}
 
 
 def make_mol_obj(smiles_string):
@@ -49,11 +50,12 @@ def make_mol_obj(smiles_string):
     return obj
 
 
-def gen_conformer_xyzs(mol_obj, conf_ids):
+def gen_conformer_xyzs(mol_obj, conf_ids, alt_atom_and_new):
     """
     Generate xyz lists for all the conformers in mol.conf_ids
     :param mol_obj: rdkit object
     :param conf_ids: (list) list of conformer ids to convert to xyz
+    :param alt_atom_and_new: (tuple)
     :return: (list) of xyz lists
     """
     xyzs = []
@@ -66,6 +68,12 @@ def gen_conformer_xyzs(mol_obj, conf_ids):
             split_line = line.split()
             if len(split_line) == 16:
                 atom_label, x, y, z = split_line[3], split_line[0], split_line[1], split_line[2]
+
+                if alt_atom_and_new is not None:
+                    print('here')
+                    if atom_label == alt_atom_and_new[1]:
+                        atom_label = alt_atom_and_new[0]
+
                 mol_file_xyzs.append([atom_label, float(x), float(y), float(z)])
 
         xyzs.append(mol_file_xyzs)
@@ -240,6 +248,36 @@ def get_orca_sp_energy(out_lines):
             return float(line.split()[4])             # e.g. line = 'FINAL SINGLE POINT ENERGY     -4143.815610365798'
 
 
+def change_heavy_atom_smiles(smiles):
+
+    changed_atom_and_new = None
+    for heavy_atom in heavy_atoms_and_analogues.keys():
+        if heavy_atom in smiles:
+            analogue = heavy_atoms_and_analogues[heavy_atom]
+            smiles = smiles.replace(heavy_atom, analogue)
+            changed_atom_and_new = (heavy_atom, analogue)
+
+    return smiles, changed_atom_and_new
+
+
+def get_atoms_in_smiles_string(smiles):
+
+    atoms = []
+
+    smiles_str_list = list(smiles)
+    for i, char in enumerate(smiles_str_list):
+        if i < len(smiles_str_list) - 1:
+            if char.isupper() and smiles_str_list[i+1].islower():
+                atoms.append(''.join(smiles_str_list[i:i+2]))
+            if char.isupper() and not smiles_str_list[i+1].islower():
+                atoms.append(char)
+        else:
+            if char.isupper():
+                atoms.append(char)
+
+    return atoms
+
+
 class Molecule(object):
 
     def calc_gibbs(self):
@@ -273,8 +311,18 @@ class Molecule(object):
         self.energy = None
         self.gibbs_corr = None
         self.gibbs = None
+        self.switched_atom_and_new = None
+
+        if any([heavy_atom in smiles for heavy_atom in heavy_atoms_and_analogues.keys()]):
+            atoms_in_smiles = get_atoms_in_smiles_string(smiles=smiles)
+            if any([sec_row_atom in atoms_in_smiles for sec_row_atom in heavy_atoms_and_analogues.values()]):
+                exit('RDKit cannot handle heavy atoms, so changing them to second row will fail when the'
+                     'xyzs are generated and we need to convert them back.')        # TODO fix RDKit
+
+            self.smiles, self.switched_atom_and_new = change_heavy_atom_smiles(smiles=smiles)
+
         self.obj = make_mol_obj(smiles)
-        self.xyzs = gen_conformer_xyzs(mol_obj=self.obj, conf_ids=[0])[0]
+        self.xyzs = gen_conformer_xyzs(mol_obj=self.obj, conf_ids=[0], alt_atom_and_new=self.switched_atom_and_new)[0]
 
         self.calc_gibbs()
 
@@ -317,18 +365,8 @@ def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
 
 if __name__ == "__main__":
     ethene_smiles = "C=C"
-    adduct_smiles = "[H][C]([H])C[*]"
+    test_adduct_smiles = "[H][C]([H])C[*]"
     charge_on_probe = 1
 
-    plot_strain_graph(strained_smiles=ethene_smiles, general_adduct_smiles=adduct_smiles, charge_on_probe=charge_on_probe)
-
-
-
-
-
-
-
-
-
-
-
+    plot_strain_graph(strained_smiles=ethene_smiles, general_adduct_smiles=test_adduct_smiles,
+                      charge_on_probe=charge_on_probe)
