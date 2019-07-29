@@ -4,6 +4,8 @@ import re
 import os
 from subprocess import Popen
 import matplotlib.pyplot as plt
+from scipy.stats import linregress
+import numpy as np
 
 
 path_to_orca = "/usr/local/orca_4_1_1_linux_x86-64/orca"
@@ -41,6 +43,11 @@ probe_dict = {"SiH3": ("[H][Si]([H])[H]", "[H][Si]([H])([H])[H]", ".[Si]%99([H])
 
 
 def make_mol_obj(smiles_string):
+    """
+    Make an RDKit molecule object from a SMILES string (e.g. generated from ChemDraw)
+    :param smiles_string: (str) SMILES of a molecule
+    :return: (object) RDKit Mol object
+    """
     obj = Chem.MolFromSmiles(smiles_string)
     obj = Chem.AddHs(obj)
     AllChem.EmbedMultipleConfs(obj, numConfs=1, params=AllChem.ETKDG())
@@ -69,7 +76,7 @@ def gen_conformer_xyzs(mol_obj, conf_ids):
         xyzs.append(mol_file_xyzs)
 
     if len(xyzs) == 0:
-        exit()
+        exit('Could not generate xyzs from RDKit object')
 
     return xyzs
 
@@ -107,6 +114,16 @@ def xyzs2xyzfile(xyzs, filename=None, basename=None, title_line=''):
 
 
 def add_H_to_adduct(adduct_smiles):
+    """
+    For a SMILES string of and adduct
+
+    i.e.
+
+    C
+
+    :param adduct_smiles:
+    :return:
+    """
 
     pattern1 = "\[.\]"
     pattern2 = "\[..\]"
@@ -350,8 +367,17 @@ def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
         ys.append(dG_isodesmic)
 
     plt.scatter(xs, ys)
-    plt.xlabel("dG_addition")
-    plt.ylabel("dG_isodesmic")
+    xs_not_None = []
+    ys_not_None = []
+    for i in range(len(xs)):
+        if xs[i] is not None and ys[i] is not None:
+            xs_not_None.append(xs[i])
+            ys_not_None.append(ys[i])
+    m, c, r, p, err = linregress(xs_not_None, ys_not_None)
+    plt.annotate("gradient = " + str(np.round(m,2)) + "\nstrain = " + str(np.round(c,2)) + "\nr^2 = "
+                 + str(np.round(np.square(r),2)), 0.1, 0.9, ha='center', va='center')
+    plt.xlabel("$\Delta G_{addition}")
+    plt.ylabel("$\Delta G_{isodesmic}$")
     return plt.savefig("strain_graph.png")
 
 
