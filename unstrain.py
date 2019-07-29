@@ -375,8 +375,8 @@ def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
             ys_not_None.append(ys[i])
     m, c, r, p, err = linregress(xs_not_None, ys_not_None)
     plt.annotate("gradient = " + str(np.round(m,2)) + "\nstrain = " + str(np.round(c,2)) + "\nr^2 = "
-                 + str(np.round(np.square(r),2)), 0.1, 0.9, ha='center', va='center')
-    plt.xlabel("$\Delta G_{addition}")
+                 + str(np.round(np.square(r),2)), (0.9*min(xs_not_None), 0.9*max(ys_not_None)), ha='center', va='center')
+    plt.xlabel("$\Delta G_{addition}$")
     plt.ylabel("$\Delta G_{isodesmic}$")
     return plt.savefig("strain_graph.png")
 
