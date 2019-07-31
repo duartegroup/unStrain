@@ -1,4 +1,4 @@
-! [alt text] (unStrain/common/unStrain_logo.png)
+! [alt text] (common/unStrain_logo.png)
 
 ### unStrain: A tool to for the calculation of strain relief
 ***
