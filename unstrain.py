@@ -344,6 +344,9 @@ def calc_dG_isodesmic(probeH, adduct, probe, adductH):
     return ((probe.gibbs + adductH.gibbs) - (probeH.gibbs + adduct.gibbs))*conversion_factor
 
 
+def print_data(xs,ys):
+
+
 def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
     mult = 1
     if charge_on_probe == 0:
@@ -365,6 +368,8 @@ def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
         dG_isodesmic = calc_dG_isodesmic(probeH, adduct, probe, adductH)
         xs.append(dG_addition)
         ys.append(dG_isodesmic)
+        print_data()
+
 
     plt.scatter(xs, ys)
     xs_not_None = []
@@ -374,10 +379,17 @@ def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
             xs_not_None.append(xs[i])
             ys_not_None.append(ys[i])
     m, c, r, p, err = linregress(xs_not_None, ys_not_None)
-    plt.annotate("gradient = " + str(np.round(m,2)) + "\nstrain = " + str(np.round(c,2)) + "\nr^2 = "
-                 + str(np.round(np.square(r),2)), (0.9*min(xs_not_None), 0.9*max(ys_not_None)), ha='center', va='center')
-    plt.xlabel("$\Delta G_{addition}$")
-    plt.ylabel("$\Delta G_{isodesmic}$")
+    plt.annotate("gradient = " + str(np.round(m,2)) + "\nstrain relief = " + str(np.round(c,1)) + "\n$r^2$ = "
+                 + str(np.round(np.square(r),3)), (0.8*min(xs_not_None), 0.2*max(ys_not_None)), ha='center', va='center')
+    if all([x < 0 for x in xs_not_None]):
+        xs_to_zero = list(sorted(xs_not_None)) + [0]
+    else:
+        xs_to_zero = list(sorted(xs_not_None))
+    plt.plot(xs_to_zero, np.array(xs_to_zero)*m + c, color = 'black', linestyle = 'dashed')
+    plt.xlabel("$\Delta G_{addition}$ / kcal mol$^{-1}$")
+    plt.ylabel("$\Delta G_{isodesmic}$ / kcal mol$^{-1}$")
+    plt.axhline(y=0, color='k', linewidth = '0.5')
+    plt.axvline(x=0, color='k', linewidth = '0.5')
     return plt.savefig("strain_graph.png")
 
 
