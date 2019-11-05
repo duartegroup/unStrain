@@ -82,7 +82,22 @@ def gen_conformer_xyzs(mol_obj, conf_ids):
 
 
 def modify_adduct_smiles(smiles_string):
-    return smiles_string.replace("[*]","%99")
+
+    # e.g, [*]C([H])([H])[C]([H])[H]
+    if smiles_string.startswith('[*]'):
+
+        # If the 3rd and 4th characters are letters..
+        if smiles_string[3].isalpha() and smiles_string[4].isalpha():
+            smiles_string = smiles_string[3:5] + '[*]' + smiles_string[5:]
+
+        # If the 3rd character is a letter..
+        elif smiles_string[3].isalpha():
+            smiles_string = smiles_string[3:4] + '[*]' + smiles_string[4:]
+
+        else:
+            exit('Failed to modify the adduct SMILES string')
+
+    return smiles_string.replace("[*]", "%99")
 
 
 def xyzs2xyzfile(xyzs, filename=None, basename=None, title_line=''):
@@ -113,7 +128,7 @@ def xyzs2xyzfile(xyzs, filename=None, basename=None, title_line=''):
     return filename
 
 
-def add_H_to_adduct(adduct_smiles):
+def add_h_to_adduct(adduct_smiles):
     """
     For a SMILES string of and adduct
 
@@ -233,24 +248,24 @@ def get_orca_opt_xyzs_energy(out_lines):
 
 def get_orca_gibbs_corr_energy_single_atom(out_lines):
 
-    S_trans, H_total, energy = None, None, None
+    s_trans, s_total, energy = None, None, None
 
     for line in out_lines:
 
         if 'Translational entropy' in line:
-            S_trans = float(line.split()[3])
+            s_trans = float(line.split()[3])
 
         if 'Total enthalpy' in line:
-            H_total = float(line.split()[3])
+            s_total = float(line.split()[3])
 
         if 'FINAL SINGLE POINT ENERGY' in line:
             energy = float(line.split()[4])
 
     # If any of the energies are not found return None
-    if any([e is None for e in [S_trans, H_total, energy]]):
+    if any([e is None for e in [s_trans, s_total, energy]]):
         return None, None
 
-    gibbs_corr = (S_trans + H_total) - energy
+    gibbs_corr = (s_trans + s_total) - energy
 
     return energy, gibbs_corr
 
@@ -376,7 +391,7 @@ def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
         probeH = Molecule(smiles=probe_dict[probe_name][1], name=probe_name + "H")
         adduct = Molecule(smiles=general_adduct_smiles + probe_dict[probe_name][2],
                           name=strained.name + "_" + probe.name, charge=charge_on_probe, mult=mult)
-        adductH = Molecule(smiles=add_H_to_adduct(adduct_smiles=adduct.smiles),
+        adductH = Molecule(smiles=add_h_to_adduct(adduct_smiles=adduct.smiles),
                            name=strained.name + "_" + probe.name + "H")
         dG_addition = calc_dG_addition(strained, probe, adduct)
         dG_isodesmic = calc_dG_isodesmic(probeH, adduct, probe, adductH)
@@ -401,9 +416,6 @@ def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
 
 
 if __name__ == "__main__":
-    bcp_smiles = "C12CC1C2"
-    test_adduct_smiles = "C1[*]([H])C[C]([H])C1"
-    chrg_on_probe = 1
 
-    plot_strain_graph(strained_smiles=bcp_smiles, general_adduct_smiles=test_adduct_smiles,
-                      charge_on_probe=chrg_on_probe)
+    plot_strain_graph(strained_smiles='C=C', general_adduct_smiles='[*]C([H])([H])[C]([H])[H]',
+                      charge_on_probe=1)
