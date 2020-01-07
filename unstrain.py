@@ -18,7 +18,7 @@ conversion_factor = 627.5  # (kcal/mol)/Ha^-1
 method_dict = {"Default": ("! PBE0 def2-SVP RIJCOSX def2/J TIGHTSCF TightOpt Freq D3BJ",
                            "! wB97X-D3 def2-TZVPP RIJCOSX def2/J TIGHTSCF Grid6 GridX6"),
                "High-level": ("! RI-MP2 def2-TZVP RIJCOSX def2/J def2-TZVP/C TIGHTSCF TightOpt NumFreq",
-                              "! DLPNO-CCSD(T) def2-QZVPP RIJCOSX def2/J TIGHTSCF GridX6"),
+                              "! DLPNO-CCSD(T) def2-QZVPP RIJCOSX AutoAux TIGHTSCF Grid6 GridX6"),
                "Cheap": ("! PBE def2-SVP RIJCOSX def2/J Opt Freq D3BJ",
                          None)}
 
@@ -186,7 +186,6 @@ def gen_orca_inp(mol, name, opt=False, sp=False, pal=1):
     with open(inp_filename, "w") as inp_file:
         if opt:
             keyword_line = method_dict[level][0]
-            keyword_line += " PAL" + str(pal)
             if len(mol.xyzs) == 1:
                 if "TightOpt" in keyword_line:
                     keyword_line = keyword_line.replace("TightOpt", "")
@@ -196,6 +195,7 @@ def gen_orca_inp(mol, name, opt=False, sp=False, pal=1):
         if sp:
             print(method_dict[level][1], file=inp_file)
         print("%maxcore", maxcore, file=inp_file)
+        print("%pal nprocs", pal, "end", file=inp_file)
         print("*xyz", mol.charge, mol.mult, file=inp_file)
         [print('{:<3}{:^12.8f}{:^12.8f}{:^12.8f}'.format(*line), file=inp_file) for line in mol.xyzs]
         print('*', file=inp_file)
@@ -211,8 +211,8 @@ def run_orca(inp_filename, out_filename):
     """
 
     if os.path.exists(os.path.join("Library", level)):
-        if os.path.exists(os.path.join("Library", os.path.join(level, out_filename))):
-            return [line for line in open(out_filename, 'r', encoding="utf-8")]
+        if os.path.exists(os.path.join("Library", level, out_filename)):
+            return [line for line in open(os.path.join("Library", level, out_filename), 'r', encoding="utf-8")]
 
     orca_terminated_normally = False
 
@@ -322,7 +322,7 @@ class Molecule(object):
 
     def optimise(self):
         print_output('Optimisation of', self.name, 'Running')
-        inp_filename = gen_orca_inp(mol=self, name=self.name + "_opt", opt=True)
+        inp_filename = gen_orca_inp(mol=self, name=self.name + "_opt", opt=True, pal=self.pal)
         orca_output_lines = run_orca(inp_filename, out_filename=inp_filename.replace(".inp", ".out"))
         if len(self.xyzs) == 1:
             self.energy, self.gibbs_corr = get_orca_gibbs_corr_energy_single_atom(out_lines=orca_output_lines)
@@ -333,7 +333,7 @@ class Molecule(object):
     def single_point(self):
         print_output('Single point of of', self.name, 'Running')
         if method_dict[level][1] is not None:
-            inp_filename = gen_orca_inp(mol=self, name=self.name + "_sp", sp=True)
+            inp_filename = gen_orca_inp(mol=self, name=self.name + "_sp", sp=True, pal=self.pal)
             orca_output_lines = run_orca(inp_filename, out_filename=inp_filename.replace(".inp", ".out"))
             self.energy = get_orca_sp_energy(out_lines=orca_output_lines)
         print_output('', '', 'Done')
@@ -344,7 +344,7 @@ class Molecule(object):
         else:
             self.gibbs = self.energy + self.gibbs_corr
 
-    def __init__(self, smiles, charge=0, mult=1, name="strained"):
+    def __init__(self, smiles, charge=0, mult=1, name="strained", pal=1):
         print_output('Molecule object for', name, 'Generating')
 
         self.smiles = smiles
@@ -356,6 +356,7 @@ class Molecule(object):
         self.gibbs = None
         self.obj = make_mol_obj(self.smiles)
         self.xyzs = gen_conformer_xyzs(mol_obj=self.obj, conf_ids=[0])[0]
+        self.pal = pal
 
         self.calc_gibbs()
         print_output('', '', '')
@@ -390,14 +391,14 @@ def get_xs_to_zero(xs):
         return list(sorted(xs))
 
 
-def calc_dGs(general_adduct_smiles, charge_on_probe, probe_name, mult, strained):
+def calc_dGs(general_adduct_smiles, charge_on_probe, probe_name, mult, strained, pal):
     probe = Molecule(smiles=probe_dict[probe_name][0], name=probe_name + str(charge_on_probe),
-                     charge=charge_on_probe, mult=mult)
-    probeH = Molecule(smiles=probe_dict[probe_name][1], name=probe_name + "H")
+                     charge=charge_on_probe, mult=mult, pal=pal)
+    probeH = Molecule(smiles=probe_dict[probe_name][1], name=probe_name + "H", pal=pal)
     adduct = Molecule(smiles=general_adduct_smiles + probe_dict[probe_name][2],
-                      name=strained.name + "_" + probe.name, charge=charge_on_probe, mult=mult)
+                      name=strained.name + "_" + probe.name, charge=charge_on_probe, mult=mult, pal=pal)
     adductH = Molecule(smiles=add_h_to_adduct(adduct_smiles=adduct.smiles),
-                       name=strained.name + "_" + probe.name + "H")
+                       name=strained.name + "_" + probe.name + "H", pal=pal)
     dG_addition = calc_dG_addition(strained, probe, adduct)
     dG_isodesmic = calc_dG_isodesmic(probeH, adduct, probe, adductH)
 
@@ -408,11 +409,15 @@ def calc_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
     mult = 1
     if charge_on_probe == 0:
         mult = 2
-    strained = Molecule(smiles=strained_smiles)
+    strained = Molecule(smiles=strained_smiles, pal=n_procs)
     general_adduct_smiles = modify_adduct_smiles(smiles_string=general_adduct_smiles)
 
-    with Pool(processes=n_procs) as pool:
-        results = [pool.apply_async(calc_dGs, (general_adduct_smiles, charge_on_probe, probe_name, mult, strained))
+    n_processes = len(probe_dict)
+    n_core_per_process = int(n_procs/n_processes) if int(n_procs/n_processes) > 0 else 1
+    processes = int(n_processes/n_core_per_process)
+    with Pool(processes=processes) as pool:
+        results = [pool.apply_async(calc_dGs, (general_adduct_smiles, charge_on_probe, probe_name, mult, strained,
+                                               n_core_per_process))
                    for probe_name in probe_dict.keys()]
 
         dGs = [res.get(timeout=None) for res in results]
