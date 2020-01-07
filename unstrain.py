@@ -6,22 +6,20 @@ from subprocess import Popen
 import matplotlib.pyplot as plt
 from scipy.stats import linregress
 import numpy as np
+import argparse
+from multiprocessing import Pool
 
 
 path_to_orca = "/usr/local/orca_4_1_1_linux_x86-64/orca"
 # path_to_orca = "/usr/local/orca_4_1_1/orca"
 
-level = "Cheap"
-
-maxcore = 4000
-
 conversion_factor = 627.5  # (kcal/mol)/Ha^-1
 
-method_dict = {"Default": ("! PBE0 def2-SVP RIJCOSX def2/J PAL4 TIGHTSCF TightOpt Freq D3BJ",
-                           "! wB97X-D3 def2-TZVPP RIJCOSX def2/J PAL4 TIGHTSCF GridX6"),
-               "High-level": ("! RI-MP2 def2-TZVP RIJCOSX def2/J def2-TZVP/C PAL8 TIGHTSCF TightOpt NumFreq",
-                              "! DLPNO-CCSD(T) def2-QZVPP RIJCOSX def2/J PAL8 TIGHTSCF GridX6"),
-               "Cheap": ("! PBE def2-SVP RIJCOSX def2/J PAL4 Opt Freq D3BJ",
+method_dict = {"Default": ("! PBE0 def2-SVP RIJCOSX def2/J TIGHTSCF TightOpt Freq D3BJ",
+                           "! wB97X-D3 def2-TZVPP RIJCOSX def2/J TIGHTSCF Grid6 GridX6"),
+               "High-level": ("! RI-MP2 def2-TZVP RIJCOSX def2/J def2-TZVP/C TIGHTSCF TightOpt NumFreq",
+                              "! DLPNO-CCSD(T) def2-QZVPP RIJCOSX def2/J TIGHTSCF GridX6"),
+               "Cheap": ("! PBE def2-SVP RIJCOSX def2/J Opt Freq D3BJ",
                          None)}
 
 probe_dict = {"SiH3": ("[H][Si]([H])[H]", "[H][Si]([H])([H])[H]", ".[Si]%99([H])([H])[H]"),
@@ -40,6 +38,21 @@ probe_dict = {"SiH3": ("[H][Si]([H])[H]", "[H][Si]([H])([H])[H]", ".[Si]%99([H])
               "GeH3": ("[H][Ge]([H])[H]", "[H][Ge]([H])([H])[H]", ".[Ge]%99([H])([H])[H]"),
               "SnH3": ("[H][Sn]([H])[H]", "[H][Sn]([H])([H])[H]", ".[Sn]%99([H])([H])[H]")
               }
+
+
+def get_args():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("strained", action='store', type=str, help='SMILES string of strained molecule')
+    parser.add_argument("adduct", action='store', type=str, help='SMILES string of adduct')
+    parser.add_argument("-np", '--number_processors', action='store', type=int, default=1, help='Number of processors')
+    parser.add_argument("-l", '--level', action='store', type=str, default="Default",
+                        help='Level of theory for calculations', choices=['Default', 'High-level', 'Cheap'])
+    parser.add_argument("-chg", '--charge_on_probe', action='store', type=int, default=0,
+                        help='Charge on probe for addition to strained molecule')
+    parser.add_argument("-m", '--max_core', action='store', type=float, default=4000, help='Maximum memory per core')
+
+    return parser.parse_args()
 
 
 def make_mol_obj(smiles_string):
@@ -168,11 +181,12 @@ def did_orca_calculation_terminate_normally(out_filename):
     return False
 
 
-def gen_orca_inp(mol, name, opt=False, sp=False):
+def gen_orca_inp(mol, name, opt=False, sp=False, pal=1):
     inp_filename = name + ".inp"
     with open(inp_filename, "w") as inp_file:
         if opt:
             keyword_line = method_dict[level][0]
+            keyword_line += " PAL" + str(pal)
             if len(mol.xyzs) == 1:
                 if "TightOpt" in keyword_line:
                     keyword_line = keyword_line.replace("TightOpt", "")
@@ -376,28 +390,42 @@ def get_xs_to_zero(xs):
         return list(sorted(xs))
 
 
-def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
+def calc_dGs(general_adduct_smiles, charge_on_probe, probe_name, mult, strained):
+    probe = Molecule(smiles=probe_dict[probe_name][0], name=probe_name + str(charge_on_probe),
+                     charge=charge_on_probe, mult=mult)
+    probeH = Molecule(smiles=probe_dict[probe_name][1], name=probe_name + "H")
+    adduct = Molecule(smiles=general_adduct_smiles + probe_dict[probe_name][2],
+                      name=strained.name + "_" + probe.name, charge=charge_on_probe, mult=mult)
+    adductH = Molecule(smiles=add_h_to_adduct(adduct_smiles=adduct.smiles),
+                       name=strained.name + "_" + probe.name + "H")
+    dG_addition = calc_dG_addition(strained, probe, adduct)
+    dG_isodesmic = calc_dG_isodesmic(probeH, adduct, probe, adductH)
+
+    return dG_addition, dG_isodesmic
+
+
+def calc_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
     mult = 1
     if charge_on_probe == 0:
         mult = 2
     strained = Molecule(smiles=strained_smiles)
     general_adduct_smiles = modify_adduct_smiles(smiles_string=general_adduct_smiles)
 
-    xs, ys = [], []
+    with Pool(processes=n_procs) as pool:
+        results = [pool.apply_async(calc_dGs, (general_adduct_smiles, charge_on_probe, probe_name, mult, strained))
+                   for probe_name in probe_dict.keys()]
 
-    for probe_name in probe_dict.keys():
-        probe = Molecule(smiles=probe_dict[probe_name][0], name=probe_name + str(charge_on_probe),
-                         charge=charge_on_probe, mult=mult)
-        probeH = Molecule(smiles=probe_dict[probe_name][1], name=probe_name + "H")
-        adduct = Molecule(smiles=general_adduct_smiles + probe_dict[probe_name][2],
-                          name=strained.name + "_" + probe.name, charge=charge_on_probe, mult=mult)
-        adductH = Molecule(smiles=add_h_to_adduct(adduct_smiles=adduct.smiles),
-                           name=strained.name + "_" + probe.name + "H")
-        dG_addition = calc_dG_addition(strained, probe, adduct)
-        dG_isodesmic = calc_dG_isodesmic(probeH, adduct, probe, adductH)
-        xs.append(dG_addition)
-        ys.append(dG_isodesmic)
+        dGs = [res.get(timeout=None) for res in results]
 
+    xs = [val[0] for val in dGs]
+    ys = [val[1] for val in dGs]
+
+    return xs, ys
+
+
+def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
+
+    xs, ys = calc_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe)
     plt.scatter(xs, ys)
 
     xs_not_None, ys_not_None = get_xs_ys_not_none(xs, ys)
@@ -416,6 +444,10 @@ def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
 
 
 if __name__ == "__main__":
+    args = get_args()
+    level = args.level
+    maxcore = args.max_core
+    n_procs = args.number_processors
 
-    plot_strain_graph(strained_smiles='C=C', general_adduct_smiles='[*]C([H])([H])[C]([H])[H]',
-                      charge_on_probe=1)
+    plot_strain_graph(strained_smiles=args.strained, general_adduct_smiles=args.adduct,
+                      charge_on_probe=args.charge_on_probe)
