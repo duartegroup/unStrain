@@ -368,7 +368,7 @@ def calc_dG_addition(strained, probe, adduct):
     return (adduct.gibbs - (strained.gibbs + probe.gibbs))*conversion_factor
 
 
-def calc_dG_isodesmic(probeH, adduct, probe, adductH):
+def calc_dG_stabilisation(probeH, adduct, probe, adductH):
     if any(gibbs is None for gibbs in [probeH.gibbs, adduct.gibbs, probe.gibbs, adductH.gibbs]):
         return None
     return ((probe.gibbs + adductH.gibbs) - (probeH.gibbs + adduct.gibbs))*conversion_factor
@@ -400,9 +400,9 @@ def calc_dGs(general_adduct_smiles, charge_on_probe, probe_name, mult, strained,
     adductH = Molecule(smiles=add_h_to_adduct(adduct_smiles=adduct.smiles),
                        name=strained.name + "_" + probe.name + "H", pal=pal)
     dG_addition = calc_dG_addition(strained, probe, adduct)
-    dG_isodesmic = calc_dG_isodesmic(probeH, adduct, probe, adductH)
+    dG_stabilisation = calc_dG_stabilisation(probeH, adduct, probe, adductH)
 
-    return dG_addition, dG_isodesmic
+    return dG_addition, dG_stabilisation
 
 
 def calc_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
@@ -441,7 +441,7 @@ def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
     xs_to_zero = get_xs_to_zero(xs=xs_not_None)
     plt.plot(xs_to_zero, np.array(xs_to_zero)*m + c, color = 'black', linestyle = 'dashed')
     plt.xlabel("$\Delta G_{addition}$ / kcal mol$^{-1}$")
-    plt.ylabel("$\Delta G_{isodesmic}$ / kcal mol$^{-1}$")
+    plt.ylabel("$\Delta G_{stabilisation}$ / kcal mol$^{-1}$")
     plt.axhline(y=0, color='k', linewidth = '0.5')
     plt.axvline(x=0, color='k', linewidth = '0.5')
 
