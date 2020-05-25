@@ -10,8 +10,9 @@ import argparse
 from multiprocessing import Pool
 
 
-path_to_orca = "/usr/local/orca_4_1_1_linux_x86-64/orca"
+# path_to_orca = "/usr/local/orca_4_1_1_linux_x86-64/orca"
 # path_to_orca = "/usr/local/orca_4_1_1/orca"
+path_to_orca = "/usr/local/orca_4_1_2_linux_x86-64/orca"
 
 conversion_factor = 627.5  # (kcal/mol)/Ha^-1
 
@@ -19,8 +20,63 @@ method_dict = {"Default": ("! PBE0 def2-SVP RIJCOSX def2/J TIGHTSCF TightOpt Fre
                            "! wB97X-D3 def2-TZVPP RIJCOSX def2/J TIGHTSCF Grid6 GridX6"),
                "High-level": ("! RI-MP2 def2-TZVP RIJCOSX def2/J def2-TZVP/C TIGHTSCF TightOpt NumFreq",
                               "! DLPNO-CCSD(T) def2-QZVPP RIJCOSX AutoAux TIGHTSCF Grid6 GridX6"),
-               "Cheap": ("! PBE def2-SVP RIJCOSX def2/J Opt Freq D3BJ",
-                         None)}
+               "Cheap": ("! PBE def2-SVP RIJCOSX def2/J Opt Freq D3BJ", None),
+               "Proposed": ("! wB97X-D3 def2-TZVP RIJCOSX def2/J TightOpt TIGHTSCF Freq Grid6 GridX6 CPCM",
+                            "! RI-B2GP-PLYP def2-TZVPP def2-TZVPP/C D3BJ RIJCOSX AutoAux TIGHTSCF Grid6 GridX6 SP CPCM"),
+               "Reference": ("! RI-SCS-MP2 def2-TZVP RIJCOSX def2/J def2-TZVP/C TIGHTSCF TightOpt NumFreq CPCM",
+                             "!DLPNO-CCSD(T) def2-TZVPP RIJCOSX AutoAux TIGHTSCF Grid6 GridX6 SP CPCM"),
+               "maProposed": ("! wB97X-D3 ma-def2-TZVP RIJCOSX AutoAux TightOpt TIGHTSCF Freq Grid6 GridX6 CPCM",
+                              "! RI-B2GP-PLYP ma-def2-TZVPP D3BJ RIJCOSX AutoAux TIGHTSCF Grid6 GridX6 SP CPCM"),
+               "maReference": ("! RI-SCS-MP2 ma-def2-TZVP RIJCOSX AutoAux TIGHTSCF TightOpt NumFreq CPCM",
+                               "! DLPNO-CCSD(T) ma-def2-TZVPP RIJCOSX AutoAux TIGHTSCF Grid6 GridX6 SP CPCM"),
+               #   "PBE_def2-SVP": ("! PBE def2-SVP RI def2/J TightOpt TIGHTSCF Freq D3BJ Grid6 GridX6",
+               #             None),
+               #   "PBE_def2-TZVP": ("! PBE def2-TZVP RI def2/J TightOpt TIGHTSCF Freq D3BJ Grid6 GridX6",
+               #             None),
+               #   "PBE_def2-TZVPP": ("! PBE def2-TZVPP RI def2/J TightOpt TIGHTSCF Freq D3BJ Grid6 GridX6",
+               #             None),
+               #   "PBE_def2-QZVP": ("! PBE def2-QZVP RI def2/J TightOpt TIGHTSCF Freq D3BJ Grid6 GridX6",
+               #             None),
+               #   "PBE0_def2-SVP": ("! PBE0 def2-SVP RIJCOSX def2/J TightOpt TIGHTSCF Freq D3BJ Grid6 GridX6",
+               #             None),
+               #   "PBE0_def2-TZVP": ("! PBE0 def2-TZVP RIJCOSX def2/J TightOpt TIGHTSCF Freq D3BJ Grid6 GridX6",
+               #             None),
+               #   "PBE0_def2-TZVPP": ("! PBE0 def2-TZVPP RIJCOSX def2/J TightOpt TIGHTSCF Freq D3BJ Grid6 GridX6",
+               #             None),
+               #   "PBE0_def2-QZVP": ("! PBE0 def2-QZVP RIJCOSX def2/J TightOpt TIGHTSCF Freq D3BJ Grid6 GridX6",
+               #             None),
+               #   "M062X_def2-SVP": ("! M062X def2-SVP RIJCOSX def2/J TightOpt TIGHTSCF NumFreq Grid6 GridX6",
+               #             None),
+               #   "M062X_def2-TZVP": ("! M062X def2-TZVP RIJCOSX def2/J TightOpt TIGHTSCF NumFreq Grid6 GridX6",
+               #             None),
+               #   "M062X_def2-TZVPP": ("! M062X def2-TZVPP RIJCOSX def2/J TightOpt TIGHTSCF NumFreq Grid6 GridX6",
+               #             None),
+               #   "M062X_def2-QZVP": ("! M062X def2-QZVP RIJCOSX def2/J TightOpt TIGHTSCF NumFreq Grid6 GridX6",
+               #             None),
+               #   "wB97X-D3_def2-SVP": ("! wB97X-D3 def2-SVP RIJCOSX def2/J TightOpt TIGHTSCF Freq Grid6 GridX6",
+               #             None),
+               #   "wB97X-D3_def2-TZVP": ("! wB97X-D3 def2-TZVP RIJCOSX def2/J TightOpt TIGHTSCF Freq Grid6 GridX6",
+               #             None),
+               #   "wB97X-D3_def2-TZVPP": ("! wB97X-D3 def2-TZVPP RIJCOSX def2/J TightOpt TIGHTSCF Freq Grid6 GridX6",
+               #             None),
+               #   "wB97X-D3_def2-QZVP": ("! wB97X-D3 def2-QZVP RIJCOSX def2/J TightOpt TIGHTSCF Freq Grid6 GridX6",
+               #             None),
+               #   "RI-MP2_def2-SVP": ("! RI-MP2 def2-SVP RIJCOSX def2/J def2-SVP/C TIGHTSCF TightOpt NumFreq",
+               #             None),
+               #   "RI-MP2_def2-TZVP": ("! RI-MP2 def2-TZVP RIJCOSX def2/J def2-TZVP/C TIGHTSCF TightOpt NumFreq",
+               #             None),
+               #   "RI-MP2_def2-TZVPP": ("! RI-MP2 def2-TZVPP RIJCOSX def2/J def2-TZVPP/C TIGHTSCF TightOpt NumFreq",
+               #             None),
+               #   "RI-MP2_def2-QZVP": ("! RI-MP2 def2-QZVP RIJCOSX def2/J def2-QZVP/C TIGHTSCF TightOpt NumFreq",
+               #             None),
+               #   "SCS-MP2_def2-SVP": ("! RI-SCS-MP2 def2-SVP RIJCOSX def2/J def2-SVP/C TIGHTSCF TightOpt NumFreq",
+               #             None),
+               #   "SCS-MP2_def2-TZVP": ("! RI-SCS-MP2 def2-TZVP RIJCOSX def2/J def2-TZVP/C TIGHTSCF TightOpt NumFreq",
+               #             None),
+               #   "SCS-MP2_def2-TZVPP": ("! RI-SCS-MP2 def2-TZVPP RIJCOSX def2/J def2-TZVPP/C TIGHTSCF TightOpt NumFreq",
+               #             None)
+               }
+
 
 probe_dict = {"SiH3": ("[H][Si]([H])[H]", "[H][Si]([H])([H])[H]", ".[Si]%99([H])([H])[H]"),
               "SeH": ("[Se][H]", "[H][Se][H]", ".[Se]%99[H]"),
@@ -47,7 +103,8 @@ def get_args():
     parser.add_argument("adduct", action='store', type=str, help='SMILES string of adduct')
     parser.add_argument("-np", '--number_processors', action='store', type=int, default=1, help='Number of processors')
     parser.add_argument("-l", '--level', action='store', type=str, default="Default",
-                        help='Level of theory for calculations', choices=['Default', 'High-level', 'Cheap'])
+                        help='Level of theory for calculations', choices=['Default', 'High-level', 'Cheap', 'Proposed',
+                                                                          'Reference', 'maProposed', 'maReference'])
     parser.add_argument("-chg", '--charge_on_probe', action='store', type=int, default=0,
                         help='Charge on probe for addition to strained molecule')
     parser.add_argument("-m", '--max_core', action='store', type=float, default=4000, help='Maximum memory per core')
@@ -262,7 +319,7 @@ def get_orca_opt_xyzs_energy(out_lines):
 
 def get_orca_gibbs_corr_energy_single_atom(out_lines):
 
-    s_trans, s_total, energy = None, None, None
+    s_trans, h_total, energy = None, None, None
 
     for line in out_lines:
 
@@ -270,16 +327,16 @@ def get_orca_gibbs_corr_energy_single_atom(out_lines):
             s_trans = float(line.split()[3])
 
         if 'Total enthalpy' in line:
-            s_total = float(line.split()[3])
+            h_total = float(line.split()[3])
 
         if 'FINAL SINGLE POINT ENERGY' in line:
             energy = float(line.split()[4])
 
     # If any of the energies are not found return None
-    if any([e is None for e in [s_trans, s_total, energy]]):
+    if any([e is None for e in [s_trans, h_total, energy]]):
         return None, None
 
-    gibbs_corr = (s_trans + s_total) - energy
+    gibbs_corr = (h_total - s_trans) - energy
 
     return energy, gibbs_corr
 
@@ -435,17 +492,23 @@ def plot_strain_graph(strained_smiles, general_adduct_smiles, charge_on_probe):
 
     xs_not_None, ys_not_None = get_xs_ys_not_none(xs, ys)
     m, c, r, p, err = linregress(xs_not_None, ys_not_None)
-    plt.annotate("gradient = " + str(np.round(m,2)) + "\nstrain relief = " + str(np.round(c,1)) + "\n$r^2$ = "
-                 + str(np.round(np.square(r),3)), (0.6*min(xs_not_None), 0.8*min(ys_not_None)), ha='center', va='center')
+    xs_sq = []
+    for i in xs_not_None:
+        xs_sq.append(i**2)
+    intercept_err = err*np.sqrt(sum(xs_sq)/len(xs_sq))
+    plt.annotate("gradient = " + str(np.round(m,2)) + "$\pm$" + str(np.round(err, 2)) +
+                 "\nstrain relief = " + str(np.round(c,1)) + "$\pm$" + str(np.round(intercept_err, 2)) +
+                 "\n$r^2$ = " + str(np.round(np.square(r),3)), (0.6*min(xs_not_None), 0.8*min(ys_not_None)),
+                 ha='center', va='center')
 
     xs_to_zero = get_xs_to_zero(xs=xs_not_None)
     plt.plot(xs_to_zero, np.array(xs_to_zero)*m + c, color = 'black', linestyle = 'dashed')
-    plt.xlabel("$\Delta G_{stabilisation}$ / kcal mol$^{-1}$")
-    plt.ylabel("$\Delta G_{addition}$ / kcal mol$^{-1}$")
+    plt.xlabel("$\Delta G_{stab}$ / kcal mol$^{-1}$")
+    plt.ylabel("$\Delta G_{add}$ / kcal mol$^{-1}$")
     plt.axhline(y=0, color='k', linewidth = '0.5')
     plt.axvline(x=0, color='k', linewidth = '0.5')
 
-    return plt.savefig("strain_graph.png", dpi=1200)
+    return plt.savefig("_strain_graph.png", dpi=1200)
 
 
 if __name__ == "__main__":
